@@ -1,55 +1,54 @@
 # timesync-fork
-Timesync Plugin alternative For Koreader
 
-This was built because the default plugin was not working in my Kindle Paperwhite 10th generation, so this is a replacement of it, I don't know if this will work with other devices, but if it does please let me know!
+Timesync Plugin alternative for KOReader.
 
-The instalation process is the same as any other koreader plugin, just unzip and paste the folder into the koreader folder plugins.
+This plugin was developed as a replacement for the default time sync plugin. It provides a robust way to keep your device's clock accurate using modern web APIs.
 
 ## Features
-- Auto-Sync: Automatically updates the time 5 seconds after a network connection is established.
-- Timezone Support: Includes a comprehensive list of world timezones (UTC-12 to UTC+14) and quick-select options for major cities.
-- Low Overhead: Uses a simple curl fetch against Google to retrieve UTC time without needing complex NTP protocols.
+
+* **Auto-Sync (Daily):** Automatically attempts to sync the time once per day when the device resumes.
+* **Geolocation Support:** Can automatically detect your timezone based on your IP address using the `ip-api.com` service.
+* **Manual Timezone Overrides:** Allows users to manually specify an IANA Timezone ID (e.g., `America/New_York`).
+* **Reliable Time Source:** Uses `timeapi.io` to retrieve precise date and time data in JSON format.
 
 ## Installation
-- Connect your e-reader to your computer via USB.
-- Navigate to the KOReader plugins directory: *koreader/plugins/*
-- Create a new folder named *timesync-fork.koplugin*.
-- Copy the following files into that folder:
-  - _meta.lua
-  - main.lua
-- Restart KOReader.
 
+1. Connect your e-reader to your computer via USB.
+2. Navigate to the KOReader plugins directory: `koreader/plugins/`
+3. Create a new folder named `timesync-fork.koplugin`.
+4. Copy the following files into that folder:
+* `_meta.lua`
+* `main.lua`
+
+
+5. Restart KOReader.
 
 ## Usage
 
-### 1. Setting your Timezone
+### 1. Accessing Settings
 
-Before syncing, you must set your local timezone so the plugin can calculate the correct local time from UTC:
+All options are located in the **Top Menu** under the **Tools** (screwdriver/wrench icon) section, labeled **Time Sync Settings**.
 
-1. Open the **Top Menu** in KOReader.
-2. Go to the **Tools** (screwdriver/wrench icon) section.
-3. Select **Internet Time Sync** > **Select Timezone**.
-4. Choose your region from:
-* **Common / Special Zones** (e.g., São Paulo, London, New York).
-* **West (Negative UTC)**.
-* **East (Positive UTC)**.
+### 2. Automatic vs. Manual Mode
 
+* **Automatic Mode (Default):** The plugin fetches your timezone automatically via `ip-api.com`.
+* **Manual Mode:** Enable this in the settings to use a specific timezone ID of your choice.
 
-### 2. Manual Synchronization
+### 3. Setting a Manual Timezone
 
-To force a sync immediately:
+If you prefer not to use IP-based detection:
 
-1. Ensure Wi-Fi is turned on and connected.
-2. Navigate to **Tools** > **Internet Time Sync**.
-3. Tap **Sync Time Now**.
-4. An "InfoMessage" will appear confirming if the sync was successful.
+1. Select **Set Manual Timezone ID** in the plugin menu.
+2. Enter a valid IANA Timezone ID (e.g., `Europe/London` or `Asia/Tokyo`).
+3. Saving a timezone will automatically enable **Manual Mode**.
 
-### 3. Automatic Synchronization
+### 4. Force Syncing
 
-Every time your device connects to a network, the plugin will wait 5 seconds and then perform a silent background synchronization.
+To update your time immediately, ensure Wi-Fi is connected and select **Force Sync Now**.
 
 ## Technical Details
 
-* **Time Source:** The plugin executes `curl -sI --insecure https://google.com` to extract the `date:` header.
-* **System Commands:** It utilizes `date -s`, `hwclock -w`, and `/usr/sbin/setdate` (for Kindle) to ensure the time is updated across all system layers.
-* **Settings:** User preferences are stored in `settings/timesync_plugin.lua`.
+* **Time API:** The plugin calls `https://timeapi.io/api/Time/current/zone?timeZone=` to get accurate local time.
+* **Geolocation API:** Uses `http://ip-api.com/line/?fields=timezone` to determine location when not in manual mode.
+* **System Commands:** Updates the system clock using `date -s` and synchronizes the hardware clock with `hwclock -w`.
+* **Settings Path:** User preferences and the last sync date are stored in `settings/timesync_fork_tracker.lua`.
