@@ -100,11 +100,11 @@ function TimeSyncFork:addToMainMenu(menu_items)
                     local current = s:readSetting("use_manual")
                     s:saveSetting("use_manual", not current)
                     s:flush()
+                    self:forceSync(false)
                 end,
             },
             {
                 text = "Set Manual Timezone ID",
-                keep_menu_open = false,
                 callback = function()
                     local s = DataStorage:open(SETTINGS_FILE)
                     local current_tz = s:readSetting("manual_timezone") or "America/Sao_Paulo"
@@ -127,10 +127,15 @@ function TimeSyncFork:addToMainMenu(menu_items)
                                         local val = input_dialog:getInputValue()
                                         if val and #val > 2 then
                                             s:saveSetting("manual_timezone", val)
+                                            -- Logic: Auto-enable Manual Mode if it was off
+                                            if not s:readSetting("use_manual") then
+                                                s:saveSetting("use_manual", true)
+                                            end
                                             s:flush()
                                         end
                                         input_dialog:onCloseKeyboard()
                                         UIManager:close(input_dialog)
+                                        self:forceSync(false)
                                     end,
                                 },
                             },
