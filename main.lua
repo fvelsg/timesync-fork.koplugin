@@ -3,40 +3,48 @@ local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local NetworkMgr = require("ui/network/manager")
 local DataStorage = require("luasettings")
+local InputDialog = require("ui/widget/inputdialog")
 
 local TimeSyncFork = WidgetContainer:extend{ name = "timesync-fork" }
 
 local SETTINGS_FILE = "settings/timesync_fork_tracker.lua"
 
 function TimeSyncFork:forceSync(is_auto)
-    -- If it's the auto-sync and no network, just fail silently to not annoy the user
+    local settings = DataStorage:open(SETTINGS_FILE)
+    local use_manual = settings:readSetting("use_manual")
+    local manual_tz = settings:readSetting("manual_timezone") or "America/Sao_Paulo"
+    
     if not NetworkMgr:isConnected() then
         if not is_auto then UIManager:show(InfoMessage:new{ text = "No Wi-Fi", timeout = 2 }) end
-        return
+        return false
     end
 
-    -- 1. Get Timezone safely
-    local loc_handle = io.popen("curl -s --insecure 'http://ip-api.com/line/?fields=timezone'")
-    if not loc_handle then return end
-    local detected_tz = loc_handle:read("*a"):gsub("%s+", "")
-    loc_handle:close()
+    local target_tz = ""
 
-    if not detected_tz or #detected_tz < 2 or detected_tz:match("fail") then
-        if not is_auto then UIManager:show(InfoMessage:new{ text = "Location Error", timeout = 2 }) end
-        return
+    if use_manual then
+        target_tz = manual_tz
+    else
+        local loc_handle = io.popen("curl -s --insecure 'http://ip-api.com/line/?fields=timezone'")
+        if loc_handle then
+            target_tz = loc_handle:read("*a"):gsub("%s+", "")
+            loc_handle:close()
+        end
     end
 
-    -- 2. Get Time safely
-    local time_url = "https://timeapi.io/api/Time/current/zone?timeZone=" .. detected_tz
+    if not target_tz or #target_tz < 2 or target_tz:match("fail") then
+        if not is_auto then UIManager:show(InfoMessage:new{ text = "TZ Error", timeout = 2 }) end
+        return false
+    end
+
+    local time_url = "https://timeapi.io/api/Time/current/zone?timeZone=" .. target_tz
     local time_handle = io.popen("curl -s --insecure '" .. time_url .. "'")
-    if not time_handle then return end
+    if not time_handle then return false end
     local result = time_handle:read("*a")
     time_handle:close()
 
-    -- 3. Parse and Validate
     local year, mon, day, hr, min, sec = result:match('"year":(%d+),"month":(%d+),"day":(%d+),"hour":(%d+),"minute":(%d+),"seconds":(%d+)')
 
-    if year and mon and day and hr and min and sec then
+    if year and hr then
         local ok, final_unix = pcall(os.time, {
             year = tonumber(year), month = tonumber(mon), day = tonumber(day),
             hour = tonumber(hr), min = tonumber(min), sec = tonumber(sec)
@@ -44,9 +52,8 @@ function TimeSyncFork:forceSync(is_auto)
 
         if ok then
             os.execute(string.format("date -s @%d && hwclock -w", final_unix))
-            -- Optional: Show success only if manually triggered
             if not is_auto then
-                UIManager:show(InfoMessage:new{ text = "Sync Success: " .. detected_tz, timeout = 2 })
+                UIManager:show(InfoMessage:new{ text = "Sync Success: " .. target_tz, timeout = 2 })
             end
             return true
         end
@@ -62,10 +69,7 @@ function TimeSyncFork:checkAndRunDaily()
     local last_sync = settings:readSetting("last_sync_date")
 
     if today ~= last_sync then
-        -- Run the sync. Passing 'true' means it's the automatic daily run.
-        local success = self:forceSync(true)
-        
-        if success then
+        if self:forceSync(true) then
             settings:saveSetting("last_sync_date", today)
             settings:flush()
         end
@@ -73,22 +77,74 @@ function TimeSyncFork:checkAndRunDaily()
 end
 
 function TimeSyncFork:onResume()
-    -- Wait 2 seconds after wake to give Wi-Fi a chance to reconnect
-    UIManager:scheduleIn(2, function()
-        self:checkAndRunDaily()
-    end)
+    UIManager:scheduleIn(3, function() self:checkAndRunDaily() end)
 end
 
 function TimeSyncFork:init()
     self.ui.menu:registerToMainMenu(self)
 end
 
--- We keep the manual button just in case you want to force it again later
 function TimeSyncFork:addToMainMenu(menu_items)
     menu_items.timesync_fork = {
-        text = "Force Time Sync Now",
+        text = "Time Sync Settings",
         sorting_hint = "tools",
-        callback = function() self:forceSync(false) end
+        sub_item_table = {
+            {
+                text = "Manual Mode",
+                checked_func = function()
+                    local s = DataStorage:open(SETTINGS_FILE)
+                    return s:readSetting("use_manual")
+                end,
+                callback = function()
+                    local s = DataStorage:open(SETTINGS_FILE)
+                    local current = s:readSetting("use_manual")
+                    s:saveSetting("use_manual", not current)
+                    s:flush()
+                end,
+            },
+            {
+                text = "Set Manual Timezone ID",
+                keep_menu_open = false,
+                callback = function()
+                    local s = DataStorage:open(SETTINGS_FILE)
+                    local current_tz = s:readSetting("manual_timezone") or "America/Sao_Paulo"
+                    local input_dialog
+                    input_dialog = InputDialog:new{
+                        title = "Enter IANA Timezone ID",
+                        input = current_tz,
+                        buttons = {
+                            {
+                                {
+                                    text = "Cancel",
+                                    callback = function()
+                                        input_dialog:onCloseKeyboard()
+                                        UIManager:close(input_dialog)
+                                    end,
+                                },
+                                {
+                                    text = "Save",
+                                    callback = function()
+                                        local val = input_dialog:getInputValue()
+                                        if val and #val > 2 then
+                                            s:saveSetting("manual_timezone", val)
+                                            s:flush()
+                                        end
+                                        input_dialog:onCloseKeyboard()
+                                        UIManager:close(input_dialog)
+                                    end,
+                                },
+                            },
+                        },
+                    }
+                    UIManager:show(input_dialog)
+                    input_dialog:onShowKeyboard()
+                end,
+            },
+            {
+                text = "Force Sync Now",
+                callback = function() self:forceSync(false) end,
+            },
+        }
     }
 end
 
